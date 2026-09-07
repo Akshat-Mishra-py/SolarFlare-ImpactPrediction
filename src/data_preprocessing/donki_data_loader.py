@@ -7,7 +7,6 @@ from json import loads
 class Donki_dataset:
     def __init__(self):
         self.url =  "https://api.nasa.gov/DONKI"
-
         
     def fetch_flares(self, start_date:str, end_date:str) -> pd.DataFrame:
         ''' Fetches the data for class of flares
@@ -22,7 +21,6 @@ class Donki_dataset:
         events = loads(response)
         df = pd.DataFrame(events)
         df["activeRegionNum"] = df["activeRegionNum"].dropna().astype(int)
-        print(df.head())
         return df
     
     def stream_data(self, url:str, params:dict, timeout:int = 10) -> bytes:
@@ -48,5 +46,6 @@ class Donki_dataset:
 
 if __name__ == "__main__":
     donki_data = Donki_dataset()
-    data = donki_data.fetch_flares("2026-01-01", "2026-08-27")
-    print(data[data["activeRegionNum"]==14519, "activeRegionNum"])
+    data = donki_data.fetch_flares("2026-08-01", "2026-08-30")
+    print()
+    print(data[["flrID", "activeRegionNum", "classType", "linkedEvents"]])

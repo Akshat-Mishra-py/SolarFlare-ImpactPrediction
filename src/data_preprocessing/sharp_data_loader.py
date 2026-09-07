@@ -25,14 +25,14 @@ class Sharp_dataset:
         ]
         self.series_info = self.Client.keys("hmi.sharp_720s")
         
-    def fetch_data(self,start_time:str, end_time:str)->None:
-        #TODO: Implement end_time so that we fetch between dates
-        self.query: pd.DataFrame = self.Client.query(f"hmi.sharp_720s_nrt[][{start_time}/1d@6h]",key=self.keys) #type:ignore
+    def fetch_data(self,start_time:str, end_time:str, interval:str="1h")->None:
+        start_time = start_time.replace("-", ".")
+        end_time = start_time.replace("-", ".")
+        self.query: pd.DataFrame = self.Client.query(f"hmi.sharp_720s_nrt[][{start_time}-{end_time}@{interval}]",key=self.keys) #type:ignore
         self.query["T_REC"] = pd.to_datetime(self.query["T_REC"].str.removesuffix("_TAI"), format="%Y.%m.%d_%H:%M:%S")
-        self.query = self.query[self.query["NOAA_AR"]!=0]
-        print(self.query)
-        print(self.query.info())
-        print(self.query["NOAA_AR"].describe())
+        self.query = self.query[self.query["NOAA_AR"]!=0] #Only take features where activeRegions are present
+        for arr, grp in self.query.groupby("NOAA_AR"):
+            print(grp.sort_values('T_REC'),"-----", arr)
 if __name__ == "__main__":
     sharp_dataset = Sharp_dataset()
-    sharp_dataset.fetch_data("2026.08.27","2026.08.01")
+    sharp_dataset.fetch_data("2026-09-01","2026-09-03","1h")
