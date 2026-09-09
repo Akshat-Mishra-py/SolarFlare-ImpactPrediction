@@ -7,6 +7,7 @@ from json import loads
 class Donki_dataset:
     def __init__(self):
         self.url =  "https://api.nasa.gov/DONKI"
+        self.min_flare_class = "A1"
         
     def fetch_flares(self, start_date:str, end_date:str) -> pd.DataFrame:
         ''' Fetches the data for class of flares
@@ -20,6 +21,8 @@ class Donki_dataset:
         response=self.stream_data(self.url+"/FLR", self.flare_params)
         events = loads(response)
         df = pd.DataFrame(events)
+        self._extract_datetime(df, ["beginTime", "peakTime", "endTime"])
+        df["xrayFlux"] = df["classType"].apply(self.get_xray_flux)
         df["activeRegionNum"] = df["activeRegionNum"].dropna().astype(int)
         return df
     
@@ -44,8 +47,17 @@ class Donki_dataset:
                     print(f"\r\033[K{status_text}", end="", flush=True)
         return response
 
+    def _extract_datetime(self, df:pd.DataFrame, timeCols:list[str]):
+        df[timeCols] = df[timeCols].apply(pd.to_datetime)
+
+    def get_xray_flux(self, classType:str):
+        #get X-Ray Flux in W/m^2 or can be said to be an encoder for the flare class
+        dic = {"A":10**-8, "B":10**-7, "C":10**-6, "M":10**-5, "X":10**-4}
+        num = float(classType[1:])
+        return num*dic[classType[0]]
 if __name__ == "__main__":
     donki_data = Donki_dataset()
     data = donki_data.fetch_flares("2026-08-01", "2026-08-30")
     print()
-    print(data[["flrID", "activeRegionNum", "classType", "linkedEvents"]])
+    print(data.info())
+    print(data[["flrID", "activeRegionNum", "classType", "linkedEvents", "xrayFlux","link"]])
