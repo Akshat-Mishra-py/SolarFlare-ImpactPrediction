@@ -28,6 +28,7 @@ class Donki_dataset:
 
         self._extract_datetime(df, ["beginTime", "peakTime", "endTime"])
         df["xrayFlux"] = df["classType"].apply(self.get_xray_flux)
+        df["flareType"] = df["classType"].apply(self.get_flare_type)
         df["activeRegionNum"] = df["activeRegionNum"].dropna().astype(int)
         return df
     
@@ -54,6 +55,9 @@ class Donki_dataset:
 
     def _extract_datetime(self, df:pd.DataFrame, timeCols:list[str]):
         df[timeCols] = df[timeCols].apply(pd.to_datetime)
+
+    def get_flare_type(self, classType:str):
+        return classType[0]
 
     def get_xray_flux(self, classType:str):
         #get X-Ray Flux in W/m^2 or can be said to be an encoder for the flare class

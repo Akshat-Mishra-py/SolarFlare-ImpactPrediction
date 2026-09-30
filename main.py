@@ -4,16 +4,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
-from src.dashboard.components import (
-    Title,
-    apply_dashboard_style,
-    data_table,
-    date_range_filter,
-    graph,
-    login_form,
-    metric_cards,
-    rate_limit,
-)
+from src.dashboard.components import *
 from src.data_preprocessing.donki_data_loader import Donki_dataset
 
 
@@ -76,7 +67,7 @@ def render_dashboard(flares: pd.DataFrame) -> None:
         .reset_index()
     )
     class_counts = (
-        flares["classType"]
+        flares["flareType"]
         .value_counts()
         .rename_axis("Flare class")
         .reset_index(name="Flare count")
