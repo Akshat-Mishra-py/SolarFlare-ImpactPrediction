@@ -106,7 +106,7 @@ def render_live_dashboard() -> None:
             cmes = prepare_cmes(fetch_donki_events("CME", utc_day))
     except (requests.RequestException, ValueError) as error:
         logging.exception("Live space-weather data request failed")
-        st.error(f"A live data source is temporarily unavailable: {error}")
+        st.error(f"A live data source is temporarily unavailable.{error.response}")
         st.info("The page will retry automatically on its next refresh.")
         return
 
