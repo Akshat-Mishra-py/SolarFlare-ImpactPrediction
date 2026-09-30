@@ -1,5 +1,5 @@
-from donki_data_loader import Donki_dataset
-from sharp_data_loader import Sharp_dataset
+from .donki_data_loader import Donki_dataset
+from .sharp_data_loader import Sharp_dataset
 import numpy as np
 import pandas as pd
 

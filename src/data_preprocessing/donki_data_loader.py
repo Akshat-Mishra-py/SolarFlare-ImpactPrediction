@@ -21,8 +21,11 @@ class Donki_dataset:
         response=self.stream_data(self.url+"/FLR", self.flare_params)
         events = loads(response)
         df = pd.DataFrame(events)
-        self._extract_datetime(df, ["beginTime", "peakTime", "endTime"])
-        df["xrayFlux"] = df["classType"].apply(self.get_xray_flux)
+        if df.empty:
+            return pd.DataFrame(columns=[
+                "beginTime", "peakTime", "endTime", "classType", "activeRegionNum", "xrayFlux"
+            ])
+
         self._extract_datetime(df, ["beginTime", "peakTime", "endTime"])
         df["xrayFlux"] = df["classType"].apply(self.get_xray_flux)
         df["activeRegionNum"] = df["activeRegionNum"].dropna().astype(int)
