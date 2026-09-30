@@ -8,7 +8,6 @@ class Donki_dataset:
     def __init__(self):
         self.url =  "https://api.nasa.gov/DONKI"
         self.min_flare_class = "A1"
-        self.min_flare_class = "A1"
         
     def fetch_flares(self, start_date:str, end_date:str) -> pd.DataFrame:
         ''' Fetches the data for class of flares
@@ -55,7 +54,7 @@ class Donki_dataset:
 
     def get_xray_flux(self, classType:str):
         #get X-Ray Flux in W/m^2 or can be said to be an encoder for the flare class
-        dic = {"A":10**-8, "B":10**-7, "C":10**-6, "M":10**-5, "X":10**-4}
+        dic = {"A":1e-8, "B":1e-7, "C":1e-6, "M":1e-5, "X":1e-4}
         num = float(classType[1:])
         return num*dic[classType[0]]
 if __name__ == "__main__":

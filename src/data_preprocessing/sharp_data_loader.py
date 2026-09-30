@@ -20,18 +20,26 @@ class Sharp_dataset:
         ] + self.features + self.surface_mapping 
         self.series_info = self.Client.keys("hmi.sharp_720s")
         
-    def fetch_data(self,start_time:str, end_time:str, interval:str="1h") -> None:
+    def fetch_data(self,start_time:str, end_time:str, interval:str="1h") -> tuple[list[pd.DataFrame], list[int]]:
+        '''Gives the sharp data and grouped by NOAA_AR and sorted by the time '''
         start_time = start_time.replace("-", ".")
-        end_time = start_time.replace("-", ".")
+        end_time = end_time.replace("-", ".")
         self.query: pd.DataFrame = self.Client.query(f"hmi.sharp_720s_nrt[][{start_time}-{end_time}@{interval}]",key=self.keys) #type:ignore
+        print("Fetched Sharp Data")
         self.query["T_REC"] = pd.to_datetime(self.query["T_REC"].str.removesuffix("_TAI"), format="%Y.%m.%d_%H:%M:%S")
         self.query = self.query[self.query["NOAA_AR"]!=0] #Only take features where activeRegions are present
         grps = []
+        arrs = []
         for arr, grp in self.query.groupby("NOAA_AR"):
             grps.append(grp.sort_values('T_REC'))
-        print(grps)
+            arrs.append(arr)
+        return grps, arrs        
+
+    
         
 if __name__ == "__main__":
     sharp_dataset = Sharp_dataset()
-    sharp_dataset.fetch_data("2026-09-01","2026-09-03","1h")
+    grps, arrs = sharp_dataset.fetch_data("2026-09-01","2026-09-03","1h")
+
+
     
