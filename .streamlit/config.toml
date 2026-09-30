@@ -1,0 +1,22 @@
+[theme]
+base = "light"
+primaryColor = "#D95D39"
+backgroundColor = "#F7FAF8"
+secondaryBackgroundColor = "#EAF1EE"
+textColor = "#18334A"
+font = "sans serif"
+chartCategoricalColors = [
+    "#D95D39",
+    "#247F78",
+    "#D69E2E",
+    "#4C78A8",
+    "#648F55",
+    "#B6536F"
+]
+chartSequentialColors = [
+    "#E6F3F0",
+    "#B8DDD5",
+    "#7FBCB0",
+    "#43958A",
+    "#176B65"
+]

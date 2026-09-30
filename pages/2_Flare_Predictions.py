@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -23,9 +24,17 @@ def render_predictions(history: pd.DataFrame) -> None:
         st.error(f"Could not generate the demo forecast: {error}")
         return
 
+    local_now = datetime.now().astimezone()
+    local_timezone = local_now.tzinfo or timezone.utc
+    forecast.insert(
+        1,
+        "Hour (local)",
+        forecast["Hour (UTC)"].dt.tz_convert(local_timezone),
+    )
+
     predicted_events = forecast.loc[forecast["Predicted class"].ne("No flare expected")]
     peak_probability = forecast["Flare probability (%)"].max()
-    peak_condition = forecast.loc[forecast["Severity score if a flare occurs"].idxmax()]
+    peak_condition = forecast.loc[forecast["Severity score if a flare occurs"].idxmax()] # type: ignore
     peak_severity = (
         f"{peak_condition['Likely class if a flare occurs']} · "
         f"{peak_condition['Likely severity if a flare occurs']}"
@@ -38,9 +47,15 @@ def render_predictions(history: pd.DataFrame) -> None:
         else "Unavailable"
     )
 
+    local_start = forecast["Hour (local)"].iloc[0]
+    local_end = forecast["Hour (local)"].iloc[-1]
+    utc_start = forecast["Hour (UTC)"].iloc[0]
+    utc_end = forecast["Hour (UTC)"].iloc[-1]
+    local_zone_name = local_now.tzname() or str(local_timezone)
     st.caption(
-        f"Forecast window: {forecast['Hour (UTC)'].iloc[0]:%b %d, %H:%M} to "
-        f"{forecast['Hour (UTC)'].iloc[-1]:%b %d, %H:%M} UTC · Historical sample: {history_period}"
+        f"Forecast window: {local_start:%b %d, %I:%M %p} to "
+        f"{local_end:%b %d, %I:%M %p} {local_zone_name} "
+        f"({utc_start:%H:%M}–{utc_end:%H:%M} UTC) · Historical sample: {history_period}"
     )
 
     metric_cards([
@@ -57,14 +72,14 @@ def render_predictions(history: pd.DataFrame) -> None:
         .reset_index(name="Hours")
     )
     chart_data = forecast.assign(
-        **{"Chart hour (UTC)": forecast["Hour (UTC)"].dt.tz_localize(None)}
+        **{"Chart hour (local)": forecast["Hour (local)"].dt.tz_localize(None)}
     )
 
     probability_column, severity_column = st.columns(2)
     with probability_column:
         graph(
             chart_data,
-            x="Chart hour (UTC)",
+            x="Chart hour (local)",
             y="Flare probability (%)",
             title="Hourly probability of a flare",
             chart_type="area",
@@ -72,7 +87,7 @@ def render_predictions(history: pd.DataFrame) -> None:
     with severity_column:
         graph(
             chart_data,
-            x="Chart hour (UTC)",
+            x="Chart hour (local)",
             y="Severity score if a flare occurs",
             title="Likely severity class if a flare occurs",
             chart_type="bar",

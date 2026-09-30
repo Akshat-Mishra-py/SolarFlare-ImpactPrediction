@@ -1,25 +1,27 @@
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 import streamlit as st
 
 from src.dashboard.components import *
-from src.data_preprocessing.donki_data_loader import Donki_dataset
+from src.data_preprocessing.noaa_data_loader import NOAADataLoader
 
 
 @st.cache_data(ttl=300, max_entries=32, show_spinner=False)
-def fetch_flares(start_date: str, end_date: str) -> pd.DataFrame:
-    return Donki_dataset().fetch_flares(start_date, end_date)
+def fetch_flares() -> pd.DataFrame:
+    return NOAADataLoader().fetch_flare_events()
 
 
 def load_range(start_date: date, end_date: date) -> bool:
     try:
         with st.spinner("Loading flare observations..."):
-            flares = fetch_flares(start_date.isoformat(), end_date.isoformat())
+            flares = fetch_flares()
+            flare_dates = flares["beginTime"].dt.date
+            flares = flares.loc[flare_dates.between(start_date, end_date)].copy()
     except Exception:
-        logging.exception("Failed to load DONKI flare observations")
-        st.error("Flare data could not be loaded. Check the NASA API connection and try again.")
+        logging.exception("Failed to load NOAA GOES flare observations")
+        st.error("Flare data could not be loaded. Check the NOAA SWPC connection and try again.")
         return False
 
     st.session_state["flares"] = flares
@@ -41,11 +43,9 @@ def render_dashboard(flares: pd.DataFrame) -> None:
             peak_class = "Unavailable"
             peak_flux = "Unavailable"
 
-    active_regions = (
-        flares["activeRegionNum"].nunique(dropna=True)
-        if "activeRegionNum" in flares
-        else 0
-    )
+    active_regions = "Unavailable from NOAA"
+    if "activeRegionNum" in flares and flares["activeRegionNum"].notna().any():
+        active_regions = flares["activeRegionNum"].nunique(dropna=True)
     metric_cards([
         {"label": "Flare count", "value": len(flares)},
         {"label": "Peak flare class", "value": peak_class},
@@ -72,12 +72,14 @@ def render_dashboard(flares: pd.DataFrame) -> None:
         .rename_axis("Flare class")
         .reset_index(name="Flare count")
     )
-    region_counts = (
-        flares["activeRegionNum"].dropna().astype(int).value_counts().head(10)
-        .sort_values()
-        .rename_axis("NOAA region")
-        .reset_index(name="Flare count")
-    )
+    region_counts = pd.DataFrame(columns=["NOAA region", "Flare count"])
+    if "activeRegionNum" in flares and flares["activeRegionNum"].notna().any():
+        region_counts = (
+            flares["activeRegionNum"].dropna().astype(int).value_counts().head(10)
+            .sort_values()
+            .rename_axis("NOAA region")
+            .reset_index(name="Flare count")
+        )
 
     left_column, right_column = st.columns(2)
     with left_column:
@@ -103,15 +105,24 @@ def render_dashboard(flares: pd.DataFrame) -> None:
             title="Daily flare count",
             chart_type="area",
         )
-        graph(
-            region_counts,
-            x="NOAA region",
-            y="Flare count",
-            title="Most active regions",
-            chart_type="bar",
-        )
+        if region_counts.empty:
+            st.info("Active-region numbers are not included in the NOAA GOES flare feed.")
+        else:
+            graph(
+                region_counts,
+                x="NOAA region",
+                y="Flare count",
+                title="Most active regions",
+                chart_type="bar",
+            )
 
-    data_table(flares, title="Flare observations")
+    table_columns = [
+        column for column in (
+            "beginTime", "peakTime", "endTime", "beginClassType", "classType",
+            "endClassType", "xrayFlux", "satellite",
+        ) if column in flares
+    ]
+    data_table(flares[table_columns], title="NOAA GOES flare observations")
 
 
 def main() -> None:
@@ -120,13 +131,21 @@ def main() -> None:
     if not login_form():
         st.stop()
 
-    Title("Solar activity", "DONKI flare observations and active-region trends")
-    today = date.today()
+    Title("Solar activity", "NOAA GOES flare observations and X-ray trends")
+    today = datetime.now(timezone.utc).date()
     if "flare_date_range" not in st.session_state:
-        st.session_state["flare_date_range"] = (today - timedelta(days=30), today)
+        st.session_state["flare_date_range"] = (today - timedelta(days=6), today)
 
     current_start, current_end = st.session_state["flare_date_range"]
     selected_start, selected_end, submitted = date_range_filter(current_start, current_end)
+    first_available_day = today - timedelta(days=6)
+    st.caption("Dates are UTC. The NOAA GOES flare-event feed provides a rolling seven-day window.")
+    if submitted and (selected_start < first_available_day or selected_end > today):
+        st.error(
+            f"The NOAA GOES flare catalog covers a rolling seven-day window "
+            f"({first_available_day:%b %d} through {today:%b %d, %Y}, UTC)."
+        )
+        submitted = False
     if "flares" not in st.session_state:
         load_range(current_start, current_end)
     elif submitted and (selected_start, selected_end) != (current_start, current_end):

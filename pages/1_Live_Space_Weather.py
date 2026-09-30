@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -7,13 +6,15 @@ import requests
 import streamlit as st
 
 from src.dashboard.components import *
-from src.data_preprocessing.donki_data_loader import Donki_dataset
+from src.data_preprocessing.noaa_data_loader import (
+    NOAA_ALERTS_URL,
+    NOAADataLoader,
+)
 
 
 NOAA_GOES_XRAY_URL = "https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json"
 NOAA_SOLAR_WIND_URL = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"
 NOAA_SOLAR_MAG_URL = "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json"
-NASA_DONKI_URL = "https://api.nasa.gov/DONKI"
 
 
 @st.cache_data(ttl=60, max_entries=4, show_spinner=False)
@@ -23,19 +24,9 @@ def fetch_noaa_feed(url: str) -> list[dict]:
     return response.json()
 
 
-@st.cache_data(ttl=300, max_entries=8, show_spinner=False)
-def fetch_donki_events(endpoint: str, utc_day: str) -> list[dict]:
-    response = requests.get(
-        f"{NASA_DONKI_URL}/{endpoint}",
-        params={
-            "startDate": utc_day,
-            "endDate": utc_day,
-            "api_key": os.getenv("NASA_API") or "DEMO_KEY",
-        },
-        timeout=20,
-    )
-    response.raise_for_status()
-    return response.json()
+@st.cache_data(ttl=300, max_entries=4, show_spinner=False)
+def fetch_noaa_flare_events() -> pd.DataFrame:
+    return NOAADataLoader().fetch_flare_events()
 
 
 def today_frame(records: list[dict], now: pd.Timestamp) -> pd.DataFrame:
@@ -47,39 +38,24 @@ def today_frame(records: list[dict], now: pd.Timestamp) -> pd.DataFrame:
     return frame.loc[frame["time_tag"].dt.date == now.date()].dropna(subset=["time_tag"])
 
 
-def prepare_flares(records: list[dict]) -> pd.DataFrame:
-    flares = pd.DataFrame(records)
-    if flares.empty:
-        return pd.DataFrame(columns=["beginTime", "peakTime", "classType", "flareType", "xrayFlux"])
+def today_radio_alerts(records: list[dict], now: pd.Timestamp) -> pd.DataFrame:
+    alerts = pd.DataFrame(records)
+    expected_columns = ["issue_datetime", "product_id", "message"]
+    if alerts.empty or not {"issue_datetime", "message"}.issubset(alerts.columns):
+        return pd.DataFrame(columns=expected_columns)
 
-    for column in ("beginTime", "peakTime", "endTime"):
-        if column in flares:
-            flares[column] = pd.to_datetime(flares[column], utc=True, errors="coerce")
-    loader = Donki_dataset()
-    flares["xrayFlux"] = flares["classType"].map(loader.get_xray_flux)
-    flares["flareType"] = flares["classType"].map(loader.get_flare_type)
-    if "activeRegionNum" in flares:
-        flares["activeRegionNum"] = pd.to_numeric(flares["activeRegionNum"], errors="coerce")
-    return flares
-
-
-def prepare_cmes(records: list[dict]) -> pd.DataFrame:
-    rows = []
-    for event in records:
-        analyses = event.get("cmeAnalyses") or []
-        analysis = next((item for item in analyses if item.get("isMostAccurate")), None)
-        if analysis is None and analyses:
-            analysis = analyses[0]
-        rows.append({
-            "Start time (UTC)": event.get("startTime"),
-            "Type": analysis.get("type") if analysis else None,
-            "Speed (km/s)": analysis.get("speed") if analysis else None,
-            "Half-angle (deg)": analysis.get("halfAngle") if analysis else None,
-            "Most accurate analysis": analysis.get("isMostAccurate") if analysis else None,
-            "Activity ID": event.get("activityID"),
-            "Details": event.get("link"),
-        })
-    return pd.DataFrame(rows)
+    alerts["issue_datetime"] = pd.to_datetime(
+        alerts["issue_datetime"], utc=True, errors="coerce"
+    )
+    alerts = alerts.loc[alerts["issue_datetime"].dt.date == now.date()].copy()
+    messages = alerts["message"].fillna("").astype(str)
+    product_ids = alerts.get("product_id", pd.Series("", index=alerts.index)).fillna("").astype(str)
+    relevant = messages.str.contains(
+        r"Type II Radio Emission|Type IV Radio Emission|CME|Coronal Mass Ejection",
+        case=False,
+        regex=True,
+    ) | product_ids.isin({"TIIA", "TIVA"})
+    return alerts.loc[relevant, expected_columns].sort_values("issue_datetime", ascending=False)
 
 
 def latest_value(frame: pd.DataFrame, column: str) -> str:
@@ -102,11 +78,12 @@ def render_live_dashboard() -> None:
             xray = today_frame(fetch_noaa_feed(NOAA_GOES_XRAY_URL), now)
             wind = today_frame(fetch_noaa_feed(NOAA_SOLAR_WIND_URL), now)
             magnetic = today_frame(fetch_noaa_feed(NOAA_SOLAR_MAG_URL), now)
-            flares = prepare_flares(fetch_donki_events("FLR", utc_day))
-            cmes = prepare_cmes(fetch_donki_events("CME", utc_day))
+            flares = fetch_noaa_flare_events()
+            flares = flares.loc[flares["beginTime"].dt.date == now.date()].copy()
+            radio_alerts = today_radio_alerts(fetch_noaa_feed(NOAA_ALERTS_URL), now)
     except (requests.RequestException, ValueError) as error:
         logging.exception("Live space-weather data request failed")
-        st.error(f"A live data source is temporarily unavailable.{error.response}")
+        st.error(f"A live data source is temporarily unavailable: {error}")
         st.info("The page will retry automatically on its next refresh.")
         return
 
@@ -135,8 +112,8 @@ def render_live_dashboard() -> None:
     latest_bz = latest_value(magnetic, "bz_gsm")
     latest_speed = latest_value(wind, "proton_speed")
     metric_cards([
-        {"label": "CMEs reported today", "value": len(cmes)},
-        {"label": "Flares reported today", "value": len(flares)},
+        {"label": "GOES flares reported today", "value": len(flares)},
+        {"label": "Radio/CME-related alerts today", "value": len(radio_alerts)},
         {"label": "Latest solar-wind speed", "value": f"{latest_speed} km/s"},
         {"label": "Latest Bz (GSM)", "value": f"{latest_bz} nT"},
     ])
@@ -177,20 +154,25 @@ def render_live_dashboard() -> None:
             chart_type="area",
         )
 
-    cme_column, flare_column = st.columns(2)
-    with cme_column:
-        section_title("Coronal mass ejections", "NASA DONKI events reported for today (UTC)")
-        if cmes.empty:
-            st.info("No CME events reported today.")
+    alerts_column, flare_column = st.columns(2)
+    with alerts_column:
+        section_title(
+            "Radio and CME-related alerts",
+            "NOAA SWPC notices; Type II/IV bursts can be CME-related, not a CME catalog.",
+        )
+        if radio_alerts.empty:
+            st.info("No matching NOAA radio-burst or CME-related alerts today.")
         else:
-            data_table(cmes, height=280)
+            data_table(radio_alerts, height=280)
     with flare_column:
-        section_title("Solar flares", "NASA DONKI events reported for today (UTC)")
+        section_title("Solar flares", "NOAA GOES flare events reported today (UTC)")
         if flares.empty:
             st.info("No flare events reported today.")
         else:
             visible_columns = [
-                column for column in ("beginTime", "peakTime", "classType", "xrayFlux", "activeRegionNum")
+                column for column in (
+                    "beginTime", "peakTime", "endTime", "classType", "xrayFlux", "satellite"
+                )
                 if column in flares
             ]
             data_table(flares[visible_columns], height=280)
