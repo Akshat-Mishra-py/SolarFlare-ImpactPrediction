@@ -2,7 +2,7 @@ import math
 import random
 
 import pandas as pd
-
+from src.model import lstm_model
 
 SEVERITY_BY_CLASS = {
     "A": ("Low", 1),

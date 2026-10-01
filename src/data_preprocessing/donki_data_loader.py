@@ -19,7 +19,6 @@ class Donki_dataset:
         logging.info(f"Fetching Flare Dataset: start_date = {start_date} end_date = {end_date}")
 
         response=self.stream_data(self.url+"/FLR", self.flare_params)
-        print(response)
         events = loads(response)
         df = pd.DataFrame(events)
         if df.empty:
